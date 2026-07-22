@@ -1,0 +1,55 @@
+{
+  "name": "pmx-pal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A PMX desktop mascot for macOS",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "packageManager": "npm@11.17.0",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "npm run build:electron && npm run copy:physics && node scripts/dev.mjs",
+    "copy:physics": "node scripts/copy-physics-assets.mjs",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:renderer": "npm run copy:physics && vite build",
+    "build": "npm run build:electron && npm run build:renderer",
+    "check": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run",
+    "start": "electron dist-electron/main.js",
+    "dist:mac": "npm run build && electron-builder --mac zip",
+    "dist:dmg": "npm run build && electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "@yohawing/three-mmd-loader": "0.6.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "@types/three": "0.185.1",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  },
+  "build": {
+    "appId": "jp.yinyang.pmxpal",
+    "productName": "PMX Pal",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}
