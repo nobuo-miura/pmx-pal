@@ -17,7 +17,7 @@
     "check": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "start": "electron dist-electron/main.js",
-    "dist:mac": "npm run build && electron-builder --mac zip",
+    "dist:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
     "dist:dmg": "npm run build && electron-builder --mac dmg"
   },
   "dependencies": {

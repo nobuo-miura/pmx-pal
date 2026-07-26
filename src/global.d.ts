@@ -7,6 +7,12 @@ type ModelInfo = {
 
 type InteractionMode = "move" | "rotate" | "fixed";
 type GazeMode = "none" | "camera" | "cursor";
+type RenderSettings = {
+  fps: 15 | 30 | 60;
+  pixelRatio: 1 | 1.5 | 2;
+  antialias: boolean;
+  shadows: boolean;
+};
 
 type CameraState = {
   position: [number, number, number];
@@ -25,6 +31,7 @@ interface Window {
     getInteractionMode: () => Promise<InteractionMode>;
     setGazeMode: (mode: GazeMode) => Promise<GazeMode>;
     getGazeMode: () => Promise<GazeMode>;
+    getRenderSettings: () => Promise<RenderSettings>;
     togglePhysics: () => Promise<boolean>;
     isPhysicsEnabled: () => Promise<boolean>;
     getCameraState: () => Promise<CameraState | null>;
@@ -39,6 +46,7 @@ interface Window {
     updateWindowResize: () => void;
     endWindowResize: () => void;
     showMenu: () => void;
+    showFileMenu: () => void;
     showInteractionModeMenu: () => void;
     showGazeModeMenu: () => void;
     onOpenModel: (callback: () => void) => void;
@@ -46,6 +54,7 @@ interface Window {
     onAlwaysOnTopChanged: (callback: (value: boolean) => void) => void;
     onInteractionModeChanged: (callback: (value: InteractionMode) => void) => void;
     onGazeModeChanged: (callback: (value: GazeMode) => void) => void;
+    onRenderSettingsChanged: (callback: (value: RenderSettings) => void) => void;
     onPhysicsEnabledChanged: (callback: (value: boolean) => void) => void;
     onGlobalCursorPosition: (callback: (position: { x: number; y: number }) => void) => void;
     onIdleMotionChanged: (callback: (value: boolean) => void) => void;

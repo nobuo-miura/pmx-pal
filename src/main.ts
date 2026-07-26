@@ -24,6 +24,7 @@ const emptyState = requireElement<HTMLElement>("#empty-state");
 const status = requireElement<HTMLElement>("#status");
 const modelName = requireElement<HTMLElement>("#model-name");
 const pinButton = requireElement<HTMLButtonElement>("#pin-window");
+const fileButton = requireElement<HTMLButtonElement>("#file-menu");
 const modeButton = requireElement<HTMLButtonElement>("#lock-model");
 const gazeButton = requireElement<HTMLButtonElement>("#gaze-mode");
 const physicsButton = requireElement<HTMLButtonElement>("#physics");
@@ -49,6 +50,12 @@ const desktopApi = window.pmxPal ?? {
   getInteractionMode: async (): Promise<InteractionMode> => "move",
   setGazeMode: async (mode: GazeMode): Promise<GazeMode> => mode,
   getGazeMode: async (): Promise<GazeMode> => "none",
+  getRenderSettings: async (): Promise<RenderSettings> => ({
+    fps: 60,
+    pixelRatio: 2,
+    antialias: true,
+    shadows: true,
+  }),
   togglePhysics: async (): Promise<boolean> => true,
   isPhysicsEnabled: async (): Promise<boolean> => true,
   getCameraState: async (): Promise<CameraState | null> => null,
@@ -63,6 +70,7 @@ const desktopApi = window.pmxPal ?? {
   updateWindowResize: (): void => undefined,
   endWindowResize: (): void => undefined,
   showMenu: (): void => undefined,
+  showFileMenu: (): void => undefined,
   showInteractionModeMenu: (): void => undefined,
   showGazeModeMenu: (): void => undefined,
   onOpenModel: (): void => undefined,
@@ -70,6 +78,7 @@ const desktopApi = window.pmxPal ?? {
   onAlwaysOnTopChanged: (): void => undefined,
   onInteractionModeChanged: (): void => undefined,
   onGazeModeChanged: (): void => undefined,
+  onRenderSettingsChanged: (): void => undefined,
   onPhysicsEnabledChanged: (): void => undefined,
   onGlobalCursorPosition: (): void => undefined,
   onIdleMotionChanged: (): void => undefined,
@@ -79,20 +88,29 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 2000);
 camera.position.set(0, 12, 40);
 
-const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(0x000000, 0);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-stage.prepend(renderer.domElement);
+function createRenderer(antialias: boolean): THREE.WebGLRenderer {
+  const value = new THREE.WebGLRenderer({ alpha: true, antialias });
+  value.setClearColor(0x000000, 0);
+  value.outputColorSpace = THREE.SRGBColorSpace;
+  value.shadowMap.type = THREE.PCFSoftShadowMap;
+  return value;
+}
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.enablePan = false;
-controls.minDistance = 3;
-controls.maxDistance = 180;
+function createControls(element: HTMLElement): OrbitControls {
+  const value = new OrbitControls(camera, element);
+  value.enableDamping = true;
+  value.dampingFactor = 0.08;
+  value.enablePan = false;
+  value.minDistance = 3;
+  value.maxDistance = 180;
+  value.addEventListener("end", handleControlsEnd);
+  return value;
+}
+
+let rendererAntialias = true;
+let renderer = createRenderer(rendererAntialias);
+stage.prepend(renderer.domElement);
+let controls = createControls(renderer.domElement);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x6d7794, 2.2));
 const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
@@ -102,6 +120,12 @@ scene.add(keyLight);
 let currentModel: ThreeMmdModel | null = null;
 let interactionMode: InteractionMode = "move";
 let gazeMode: GazeMode = "none";
+let renderSettings: RenderSettings = {
+  fps: 60,
+  pixelRatio: 2,
+  antialias: true,
+  shadows: true,
+};
 let idleMotionEnabled = true;
 let physicsEnabled = true;
 let physicsAvailable = false;
@@ -155,6 +179,7 @@ let gazeReferenceBone: THREE.Bone | null = null;
 let gazeYaw = 0;
 let gazePitch = 0;
 let previousGazeTime = 0;
+let previousRenderTime = 0;
 const cursorNdc = new THREE.Vector2();
 const gazeRaycaster = new THREE.Raycaster();
 const gazeTarget = new THREE.Vector3();
@@ -163,6 +188,50 @@ const gazeDirection = new THREE.Vector3();
 const gazeRootQuaternion = new THREE.Quaternion();
 const gazeOffset = new THREE.Quaternion();
 const gazeEuler = new THREE.Euler(0, 0, 0, "YXZ");
+let hiddenAt = document.hidden ? performance.now() : null;
+
+function replaceRenderer(antialias: boolean): void {
+  const previousCanvas = renderer.domElement;
+  const previousTarget = controls.target.clone();
+  controls.dispose();
+  renderer.dispose();
+  renderer.forceContextLoss();
+
+  rendererAntialias = antialias;
+  renderer = createRenderer(antialias);
+  previousCanvas.replaceWith(renderer.domElement);
+  controls = createControls(renderer.domElement);
+  controls.target.copy(previousTarget);
+  applyInteractionMode();
+}
+
+function applyModelShadows(root: THREE.Object3D, enabled: boolean): void {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.castShadow = enabled;
+    object.receiveShadow = enabled;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) material.needsUpdate = true;
+  });
+}
+
+function applyRenderSettings(value: RenderSettings): void {
+  renderSettings = value;
+  if (rendererAntialias !== value.antialias) {
+    replaceRenderer(value.antialias);
+  }
+  renderer.setPixelRatio(value.pixelRatio);
+  renderer.shadowMap.enabled = value.shadows;
+  renderer.shadowMap.needsUpdate = true;
+  keyLight.castShadow = value.shadows;
+  if (currentModel) applyModelShadows(currentModel.root, value.shadows);
+  previousRenderTime = 0;
+  document.documentElement.dataset.renderFps = String(value.fps);
+  document.documentElement.dataset.renderPixelRatio = String(value.pixelRatio);
+  document.documentElement.dataset.renderAntialias = String(value.antialias);
+  document.documentElement.dataset.renderShadows = String(value.shadows);
+  resizeRenderer();
+}
 
 function showToolbar(): void {
   toolbar.classList.remove("toolbar-hidden");
@@ -362,10 +431,10 @@ function saveCameraState(): void {
   });
 }
 
-controls.addEventListener("end", () => {
+function handleControlsEnd(): void {
   window.clearTimeout(cameraSaveTimer);
   cameraSaveTimer = window.setTimeout(saveCameraState, 300);
-});
+}
 
 function showStatus(message: string, isError = false): void {
   status.textContent = message;
@@ -387,6 +456,7 @@ async function loadModel(info: ModelInfo): Promise<void> {
     currentModel = model;
     idleMotions = [];
     currentMotionIndex = -1;
+    applyModelShadows(model.root, renderSettings.shadows);
     scene.add(model.root);
     setupGazeBones(model);
     frameModel(model.root);
@@ -463,8 +533,6 @@ async function chooseMotion(): Promise<void> {
   if (infos) await loadMotions(infos);
 }
 
-document.querySelector("#open-model")?.addEventListener("click", () => void chooseModel());
-document.querySelector("#open-motion")?.addEventListener("click", () => void chooseMotion());
 document.querySelector("#empty-open-model")?.addEventListener("click", () => void chooseModel());
 document.querySelector("#close")?.addEventListener("click", () => desktopApi.close());
 document.querySelector("#menu")?.addEventListener("click", () => desktopApi.showMenu());
@@ -474,6 +542,7 @@ pinButton.addEventListener("click", async () => {
   pinButton.setAttribute("aria-pressed", String(isPinned));
 });
 
+fileButton.addEventListener("click", () => desktopApi.showFileMenu());
 modeButton.addEventListener("click", () => desktopApi.showInteractionModeMenu());
 gazeButton.addEventListener("click", () => desktopApi.showGazeModeMenu());
 physicsButton.addEventListener("click", async () => {
@@ -509,6 +578,7 @@ desktopApi.onGazeModeChanged((mode) => {
   previousGazeTime = 0;
   updateGazeButton();
 });
+desktopApi.onRenderSettingsChanged(applyRenderSettings);
 desktopApi.onPhysicsEnabledChanged((isEnabled) => {
   physicsEnabled = isEnabled;
   resetPhysics();
@@ -618,9 +688,30 @@ window.addEventListener("contextmenu", (event) => {
 });
 
 window.addEventListener("resize", resizeRenderer);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    hiddenAt = performance.now();
+    return;
+  }
+  if (hiddenAt !== null) {
+    const hiddenSeconds = (performance.now() - hiddenAt) / 1000;
+    motionStartedAt += hiddenSeconds;
+    motionSwitchedAt += hiddenSeconds;
+  }
+  hiddenAt = null;
+  previousRenderTime = 0;
+  previousGazeTime = 0;
+  resetPhysics();
+});
 
 function animate(timeMilliseconds: number): void {
   requestAnimationFrame(animate);
+  if (document.hidden) return;
+  const frameInterval = 1000 / renderSettings.fps;
+  const elapsed = timeMilliseconds - previousRenderTime;
+  if (previousRenderTime > 0 && elapsed < frameInterval - 0.5) return;
+  previousRenderTime =
+    previousRenderTime === 0 ? timeMilliseconds : timeMilliseconds - (elapsed % frameInterval);
   const seconds = timeMilliseconds / 1000;
   updateMotion(seconds);
   updateGaze(seconds);
@@ -644,6 +735,8 @@ void desktopApi.getGazeMode().then((mode) => {
   gazeMode = mode;
   updateGazeButton();
 });
+
+void desktopApi.getRenderSettings().then(applyRenderSettings);
 
 void Promise.all([desktopApi.isPhysicsEnabled(), mmdLoaderPromise]).then(([isEnabled]) => {
   physicsEnabled = isEnabled;
