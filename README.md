@@ -14,7 +14,9 @@ PMX Pal is a transparent desktop mascot app that displays PMX models on macOS.
 - Simulate hair, clothing, and accessories with MMD-oriented Bullet Physics
 - Switch between no gaze control, camera gaze, and mouse cursor tracking
 - Track the mouse cursor even when it is outside the app window
-- Restore the window position and size, selected PMX and VMD files, interaction mode, and gaze mode
+- Adjust FPS, pixel ratio, antialiasing, and shadows independently
+- Pause rendering and motion while the window is hidden
+- Restore the window position and size, selected PMX and VMD files, interaction mode, gaze mode, and render settings
 - Save camera position, rotation, and zoom separately for each model
 - Handle file paths containing Japanese characters and spaces
 
@@ -41,17 +43,13 @@ npm run build
 
 GitHub Actions runs the same tests, type checks, and build.
 
-Create a macOS ZIP archive:
+Create a local macOS app:
 
 ```sh
 npm run dist:mac
 ```
 
-Create a DMG:
-
-```sh
-npm run dist:dmg
-```
+The app is generated at `release/mac-arm64/PMX Pal.app`. This command does not code-sign or notarize it.
 
 ## Controls
 
@@ -59,18 +57,20 @@ npm run dist:dmg
 - Drag the `✥` handle while the toolbar is visible to move the window.
 - The toolbar hides after three seconds of inactivity and reappears when the pointer moves.
 - Move the pointer to the top edge of the window to reveal a hidden toolbar.
-- Use the PMX Pal menu in the macOS menu bar to select PMX and VMD files, change interaction and gaze modes, toggle idle motion and always-on-top behavior, or quit the app.
+- Use the File menu in the macOS menu bar to select a PMX model or VMD motions.
+- Use the PMX Pal menu to change interaction and gaze modes, render settings, idle motion, and always-on-top behavior, or quit the app.
+- Use the file button in the toolbar to open its model and motion submenu.
 - Use the interaction-mode button to select camera pan, rotation, or fixed mode.
 - In pan mode, drag to move the camera vertically or horizontally.
 - In rotation mode, drag to rotate the camera.
 - In fixed mode, camera pan, rotation, and zoom are disabled.
 - In pan or rotation mode, scroll or pinch on a trackpad to zoom.
-- Use the motion button to select one or more idle VMD motions.
 - Use the idle button to enable or disable the selected idle motions.
 - Use the physics button to enable or disable MMD physics.
 - Use the gaze-mode button to select no gaze control, camera gaze, or cursor tracking.
 - Camera gaze turns the character's eyes, head, and neck toward the camera.
 - Cursor tracking follows the mouse pointer, including outside the app window.
+- Use Render Settings to adjust FPS, pixel ratio, antialiasing, and shadows independently.
 - Right-click or press `M` to open the menu.
 - Drag the striped handle in the bottom-right corner to resize the window.
 - Use the always-on-top button to toggle whether the window stays above other windows.

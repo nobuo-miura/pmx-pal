@@ -7,6 +7,12 @@ export type ModelInfo = {
 
 export type InteractionMode = "move" | "rotate" | "fixed";
 export type GazeMode = "none" | "camera" | "cursor";
+export type RenderSettings = {
+  fps: 15 | 30 | 60;
+  pixelRatio: 1 | 1.5 | 2;
+  antialias: boolean;
+  shadows: boolean;
+};
 
 export type CameraState = {
   position: [number, number, number];
@@ -25,6 +31,7 @@ contextBridge.exposeInMainWorld("pmxPal", {
   getInteractionMode: (): Promise<InteractionMode> => ipcRenderer.invoke("interaction:get-mode"),
   setGazeMode: (mode: GazeMode): Promise<GazeMode> => ipcRenderer.invoke("gaze:set-mode", mode),
   getGazeMode: (): Promise<GazeMode> => ipcRenderer.invoke("gaze:get-mode"),
+  getRenderSettings: (): Promise<RenderSettings> => ipcRenderer.invoke("render:get-settings"),
   togglePhysics: (): Promise<boolean> => ipcRenderer.invoke("physics:toggle"),
   isPhysicsEnabled: (): Promise<boolean> => ipcRenderer.invoke("physics:is-enabled"),
   getCameraState: (): Promise<CameraState | null> => ipcRenderer.invoke("camera:get-state"),
@@ -40,6 +47,7 @@ contextBridge.exposeInMainWorld("pmxPal", {
   updateWindowResize: (): void => ipcRenderer.send("window:resize-update"),
   endWindowResize: (): void => ipcRenderer.send("window:resize-end"),
   showMenu: (): void => ipcRenderer.send("menu:show"),
+  showFileMenu: (): void => ipcRenderer.send("menu:show-file"),
   showInteractionModeMenu: (): void => ipcRenderer.send("menu:show-interaction-mode"),
   showGazeModeMenu: (): void => ipcRenderer.send("menu:show-gaze-mode"),
   onOpenModel: (callback: () => void): void => {
@@ -56,6 +64,9 @@ contextBridge.exposeInMainWorld("pmxPal", {
   },
   onGazeModeChanged: (callback: (value: GazeMode) => void): void => {
     ipcRenderer.on("gaze:mode-changed", (_event, value: GazeMode) => callback(value));
+  },
+  onRenderSettingsChanged: (callback: (value: RenderSettings) => void): void => {
+    ipcRenderer.on("render:settings-changed", (_event, value: RenderSettings) => callback(value));
   },
   onPhysicsEnabledChanged: (callback: (value: boolean) => void): void => {
     ipcRenderer.on("physics:enabled-changed", (_event, value: boolean) => callback(value));

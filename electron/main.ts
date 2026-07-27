@@ -16,6 +16,15 @@ import { isPathInside } from "./path-utils.js";
 
 type InteractionMode = "move" | "rotate" | "fixed";
 type GazeMode = "none" | "camera" | "cursor";
+type RenderFps = 15 | 30 | 60;
+type RenderPixelRatio = 1 | 1.5 | 2;
+
+type RenderSettings = {
+  fps: RenderFps;
+  pixelRatio: RenderPixelRatio;
+  antialias: boolean;
+  shadows: boolean;
+};
 
 type CameraState = {
   position: [number, number, number];
@@ -30,6 +39,12 @@ type AppSettings = {
   alwaysOnTop: boolean;
   interactionMode: InteractionMode;
   gazeMode: GazeMode;
+  renderFps: RenderFps;
+  renderPixelRatio: RenderPixelRatio;
+  renderAntialias: boolean;
+  renderShadows: boolean;
+  /** 0.1.0で保存された描画品質プリセットとの互換用 */
+  renderQuality?: "standard" | "low";
   physicsEnabled: boolean;
   /** 0.1.0で保存された固定設定との互換用 */
   interactionLocked?: boolean;
@@ -42,6 +57,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   alwaysOnTop: true,
   interactionMode: "move",
   gazeMode: "none",
+  renderFps: 60,
+  renderPixelRatio: 2,
+  renderAntialias: true,
+  renderShadows: true,
   physicsEnabled: true,
   idleMotion: true,
 };
@@ -73,6 +92,7 @@ async function loadSettings(): Promise<AppSettings> {
   try {
     const raw = await fs.readFile(settingsPath(), "utf8");
     const saved = JSON.parse(raw) as Partial<AppSettings>;
+    const wasLowQuality = saved.renderQuality === "low";
     return {
       alwaysOnTop: saved.alwaysOnTop ?? true,
       interactionMode:
@@ -85,6 +105,22 @@ async function loadSettings(): Promise<AppSettings> {
             : "move",
       gazeMode:
         saved.gazeMode === "camera" || saved.gazeMode === "cursor" ? saved.gazeMode : "none",
+      renderFps:
+        saved.renderFps === 15 || saved.renderFps === 30 || saved.renderFps === 60
+          ? saved.renderFps
+          : wasLowQuality
+            ? 30
+            : 60,
+      renderPixelRatio:
+        saved.renderPixelRatio === 1 ||
+        saved.renderPixelRatio === 1.5 ||
+        saved.renderPixelRatio === 2
+          ? saved.renderPixelRatio
+          : wasLowQuality
+            ? 1
+            : 2,
+      renderAntialias: saved.renderAntialias ?? !wasLowQuality,
+      renderShadows: saved.renderShadows ?? !wasLowQuality,
       physicsEnabled: saved.physicsEnabled ?? true,
       idleMotion: saved.idleMotion ?? true,
       modelPath: saved.modelPath,
@@ -223,6 +259,8 @@ function updateApplicationMenuChecks(): void {
   const idleItem = menu?.getMenuItemById("idle-motion");
   const physicsItem = menu?.getMenuItemById("physics-enabled");
   const topItem = menu?.getMenuItemById("always-on-top");
+  const antialiasItem = menu?.getMenuItemById("render-antialias");
+  const shadowsItem = menu?.getMenuItemById("render-shadows");
   for (const mode of ["move", "rotate", "fixed"] as const) {
     const item = menu?.getMenuItemById(`interaction-mode-${mode}`);
     if (item) item.checked = settings.interactionMode === mode;
@@ -231,6 +269,16 @@ function updateApplicationMenuChecks(): void {
     const item = menu?.getMenuItemById(`gaze-mode-${mode}`);
     if (item) item.checked = settings.gazeMode === mode;
   }
+  for (const fps of [60, 30, 15] as const) {
+    const item = menu?.getMenuItemById(`render-fps-${fps}`);
+    if (item) item.checked = settings.renderFps === fps;
+  }
+  for (const pixelRatio of [2, 1.5, 1] as const) {
+    const item = menu?.getMenuItemById(`render-pixel-ratio-${pixelRatio}`);
+    if (item) item.checked = settings.renderPixelRatio === pixelRatio;
+  }
+  if (antialiasItem) antialiasItem.checked = settings.renderAntialias;
+  if (shadowsItem) shadowsItem.checked = settings.renderShadows;
   if (idleItem) idleItem.checked = settings.idleMotion;
   if (physicsItem) physicsItem.checked = settings.physicsEnabled;
   if (topItem) topItem.checked = settings.alwaysOnTop;
@@ -303,6 +351,80 @@ function gazeModeMenuItems(): MenuItemConstructorOptions[] {
   ];
 }
 
+function currentRenderSettings(): RenderSettings {
+  return {
+    fps: settings.renderFps,
+    pixelRatio: settings.renderPixelRatio,
+    antialias: settings.renderAntialias,
+    shadows: settings.renderShadows,
+  };
+}
+
+async function updateRenderSettings(value: Partial<RenderSettings>): Promise<void> {
+  if (value.fps !== undefined) settings.renderFps = value.fps;
+  if (value.pixelRatio !== undefined) settings.renderPixelRatio = value.pixelRatio;
+  if (value.antialias !== undefined) settings.renderAntialias = value.antialias;
+  if (value.shadows !== undefined) settings.renderShadows = value.shadows;
+  delete settings.renderQuality;
+  await saveSettings();
+  updateApplicationMenuChecks();
+  mainWindow?.webContents.send("render:settings-changed", currentRenderSettings());
+}
+
+function renderSettingsMenuItems(): MenuItemConstructorOptions[] {
+  return [
+    {
+      label: "FPS",
+      submenu: ([60, 30, 15] as const).map((fps) => ({
+        id: `render-fps-${fps}`,
+        label: String(fps),
+        type: "radio" as const,
+        checked: settings.renderFps === fps,
+        click: () => void updateRenderSettings({ fps }),
+      })),
+    },
+    {
+      label: "Pixel Ratio",
+      submenu: ([2, 1.5, 1] as const).map((pixelRatio) => ({
+        id: `render-pixel-ratio-${pixelRatio}`,
+        label: String(pixelRatio),
+        type: "radio" as const,
+        checked: settings.renderPixelRatio === pixelRatio,
+        click: () => void updateRenderSettings({ pixelRatio }),
+      })),
+    },
+    {
+      id: "render-antialias",
+      label: "アンチエイリアス",
+      type: "checkbox",
+      checked: settings.renderAntialias,
+      click: (item) => void updateRenderSettings({ antialias: item.checked }),
+    },
+    {
+      id: "render-shadows",
+      label: "影",
+      type: "checkbox",
+      checked: settings.renderShadows,
+      click: (item) => void updateRenderSettings({ shadows: item.checked }),
+    },
+  ];
+}
+
+function fileMenuItems(includeAccelerators = false): MenuItemConstructorOptions[] {
+  return [
+    {
+      label: "モデルを開く…",
+      ...(includeAccelerators ? { accelerator: "CmdOrCtrl+O" } : {}),
+      click: () => mainWindow?.webContents.send("menu:open-model"),
+    },
+    {
+      label: "動作を選択…",
+      ...(includeAccelerators ? { accelerator: "CmdOrCtrl+Shift+O" } : {}),
+      click: () => mainWindow?.webContents.send("menu:open-motion"),
+    },
+  ];
+}
+
 async function setIdleMotion(value: boolean): Promise<void> {
   settings.idleMotion = value;
   await saveSettings();
@@ -333,19 +455,9 @@ function installApplicationMenu(): void {
         submenu: [
           { role: "about" },
           { type: "separator" },
-          {
-            label: "PMXモデルを開く…",
-            accelerator: "CmdOrCtrl+O",
-            click: () => mainWindow?.webContents.send("menu:open-model"),
-          },
-          {
-            label: "待機VMDを選択…",
-            accelerator: "CmdOrCtrl+Shift+O",
-            click: () => mainWindow?.webContents.send("menu:open-motion"),
-          },
-          { type: "separator" },
           { label: "操作モード", submenu: interactionModeMenuItems() },
           { label: "目線モード", submenu: gazeModeMenuItems() },
+          { label: "描画設定", submenu: renderSettingsMenuItems() },
           {
             id: "physics-enabled",
             label: "MMD物理演算",
@@ -374,6 +486,10 @@ function installApplicationMenu(): void {
           { type: "separator" },
           { role: "quit" },
         ],
+      },
+      {
+        label: "ファイル",
+        submenu: fileMenuItems(true),
       },
       {
         label: "編集",
@@ -456,6 +572,7 @@ function registerIpc(): void {
     return settings.gazeMode;
   });
   ipcMain.handle("gaze:get-mode", () => settings.gazeMode);
+  ipcMain.handle("render:get-settings", currentRenderSettings);
   ipcMain.handle("physics:toggle", async () => {
     await setPhysicsEnabled(!settings.physicsEnabled);
     return settings.physicsEnabled;
@@ -537,17 +654,17 @@ function registerIpc(): void {
     if (!mainWindow) return;
     Menu.buildFromTemplate(gazeModeMenuItems()).popup({ window: mainWindow });
   });
+  ipcMain.on("menu:show-file", () => {
+    if (!mainWindow) return;
+    Menu.buildFromTemplate(fileMenuItems()).popup({ window: mainWindow });
+  });
 
   ipcMain.on("menu:show", () => {
     if (!mainWindow) return;
     Menu.buildFromTemplate([
       {
-        label: "PMXモデルを開く…",
-        click: () => mainWindow?.webContents.send("menu:open-model"),
-      },
-      {
-        label: "待機VMDを選択…",
-        click: () => mainWindow?.webContents.send("menu:open-motion"),
+        label: "ファイル",
+        submenu: fileMenuItems(),
       },
       { type: "separator" },
       {
@@ -560,6 +677,7 @@ function registerIpc(): void {
       },
       { label: "操作モード", submenu: interactionModeMenuItems() },
       { label: "目線モード", submenu: gazeModeMenuItems() },
+      { label: "描画設定", submenu: renderSettingsMenuItems() },
       {
         label: "MMD物理演算",
         type: "checkbox",
